@@ -1,0 +1,34 @@
+{
+  "id": "plugin.cn.addenda",
+  "plugin_type": "translate",
+  "icon": "addenda.svg",
+  "display": "ADDENDA-STREAM",
+  "homepage": "",
+  "needs": [
+    {
+      "key": "field",
+      "display": "领域",
+      "type": "input"
+    },
+	{
+      "key": "requestPath",
+      "display": "API地址",
+      "type": "input"
+    },
+	{
+      "key": "model",
+      "display": "model",
+      "type": "input"
+    },
+	{
+      "key": "apiKey",
+      "display": "ApiKey",
+      "type": "input"
+    }
+  ],
+  "language": {
+    "auto": "auto",
+    "zh_cn": "zh",
+    "en": "en"
+  }
+}

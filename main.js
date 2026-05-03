@@ -1,0 +1,167 @@
+async function translate(text, from, to, options) {
+	const { config, setResult, utils } = options;
+	const { tauriFetch: fetch } = utils;
+
+	let buffer = '';
+
+	let { field, apiKey, model, requestPath } = config;
+
+	let systemPrompt = `
+					<instruction>
+					## Role
+					你是一位40岁的翻译专家，精通${field}领域的'${from}-${to}'翻译
+
+					## Skills
+					### Skill_1: 根据输入文本的语言进行翻译，如果是'${from}'则输出'${to}'，如果是'${to}'则输出'${from}'
+					### Skill_2: 如果输入文本的语义与${field}领域有关，请按照${field}领域进行翻译；否则，请按照通用领域进行翻译
+					### Skill_3: 给出输入文本最合理的3个翻译
+					### Skill_4: 如果输入的文本有多个单词，将原文分词，并逐一输出'中学水平及以上'单词的译文
+					### Skill_5: 若分词后的单词存在多个语义，则辨析适用场景
+					### Skill_6: 如果输入的文本不是'${from}'或'${to}'，输出“我只能在'${from}-${to}'之间翻译”
+
+					## Constraint
+					### Constraint_1: 只能输出翻译结果，不要输出思考过程，不要输出其他无关的信息
+					### Constraint_2: 以自然语言段落形式输出
+					### Constraint_3: 如果输入的文本有多个单词，分为全文翻译和分词翻译两部分输出
+					### Constraint_4: 如果输入的文本只有一个单词，分词翻译部分输出“无需分词翻译”
+					### Constraint_5: 全文翻译部分和分词翻译部分之间有一个空行分割
+					### Constraint_6: 输入为纯文本，输出为纯文本，不要输出图表
+
+					## Output 
+					### Output_1: 全文翻译的输出是纯文本构成的有序列表，序号为123
+					### Output_2: 全文翻译的每个结果都换行输出。结果之间不要有空行
+					### Output_3: 分词翻译的输出是键值对构成的有序列表，key是'单词(音标)'，value是分词译文，序号为123
+					### Output_4: 分词翻译的单词如果有多个译文，输出与语境最相近的三个，格式为'分词译文1 / 分词译文2 / 分词译文3'
+					### Output_5: 分词翻译的单词不要以大写字母开头
+					### Output_6: 分词翻译的每个结果都换行输出，结果之间不要有空行
+					### Output_7: 分词翻译的每个分词译文都需要进行辨析
+					### Output_8: 分词辨析的输出是键值对构成的有序列表，key是分词译文，value是分词译文辨析，序号为abc
+					### Output_9: 分词辨析的每个结果都换行输出，结果前要有一个空格，结果之间不要有空行
+					</instruction>
+
+					<output>
+					可以翻译且输入的文本有多个单词时，输出格式如下
+					全文翻译：
+					1.译文1
+					2.译文2
+					3.译文3
+
+					分词翻译：
+					1.分词1(音标1): 分词译文1a / 分词译文1b / 分词译文1c
+					 a.分词译文1a： 分词译文1a辨析
+					 b.分词译文1b： 分词译文1b辨析
+					 c.分词译文1c： 分词译文1c辨析
+					2.分词分词2(音标2): 分词译文2a / 分词译文2b
+					 a.分词译文2a： 分词译文2a辨析
+					 b.分词译文2b： 分词译文2b辨析
+					</output>
+
+					<output>
+					可以翻译且输入的文本只有一个单词时，输出格式如下
+					全文翻译：
+					1.译文1
+					2.译文2
+
+					分词翻译：无需分词翻译
+					</output>
+
+					<output>
+					无法翻译时输出格式：我只能在'${from}-${to}'之间翻译
+					</output>
+			`;
+
+	try {
+
+		const headers = {
+			'Content-Type': 'application/json',
+			'Authorization': `Bearer ${apiKey}`
+		}
+
+		const body = {
+			"model": model,
+			"messages": [
+				{
+					"role": "system",
+					"content": systemPrompt
+				},
+				{
+					"role": "user",
+					"content": text
+				}
+			],
+			"stream": true,
+			"enable_thinking": false
+		}
+
+		const response = await window.fetch(requestPath, {
+			headers: headers,
+			method: 'POST',
+			url: requestPath,
+			body: JSON.stringify(body)
+		});
+
+		const reader = response.body.getReader();
+		const decoder = new TextDecoder('utf-8');
+
+		if (response.ok) {
+			// 用于累积已解析的内容，实现流式实时更新
+			let lastParsedContent = '';
+			
+			while (true) {
+				const {done, value} = await reader.read();
+				if (done) {
+					// 最终完整解析
+					const fullContent = parseSSEToContent(buffer);
+					if (setResult) {
+						setResult(fullContent);
+					}
+					return fullContent;
+				}
+		
+				const chunk = decoder.decode(value, { stream: true });
+				buffer += chunk;
+				
+				// 实时解析当前累积的 SSE 数据，获取最新翻译内容
+				const currentParsedContent = parseSSEToContent(buffer);
+				// 只有当内容有变化时才调用 setResult，避免不必要的更新
+				if (currentParsedContent !== lastParsedContent && setResult) {
+					lastParsedContent = currentParsedContent;
+					setResult(currentParsedContent);
+				}
+			}
+		} else {
+			const errorText = await response.text();
+			const errorMsg = `HTTP ${response.status}: ${errorText}`;
+			if (setResult) {
+				setResult(errorMsg);
+			}
+			return errorMsg;
+		}
+	} catch(error) {
+		const errorMsg = "http request error, buffer: '" + buffer + "'. error: " + JSON.stringify(error) + ".";
+		if (setResult) {
+			setResult(errorMsg);
+		}
+		return errorMsg;
+	}
+}
+
+
+// SSE 流式响应解析方法：将原始流数据转换为翻译内容
+function parseSSEToContent(sseBuffer) {
+	let fullContent = '';
+	const lines = sseBuffer.split('\n');
+	for (const line of lines) {
+		if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+			try {
+				const data = JSON.parse(line.slice(6));
+				if (data.choices && data.choices[0] && data.choices[0].delta && data.choices[0].delta.content) {
+					fullContent += data.choices[0].delta.content;
+				}
+			} catch (e) {
+				// 忽略解析错误的行
+			}
+		}
+	}
+	return fullContent;
+}
