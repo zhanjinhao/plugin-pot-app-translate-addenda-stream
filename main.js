@@ -17,7 +17,7 @@ async function translate(text, from, to, options) {
 					### Skill_3: 给出输入文本最合理的3个翻译
 					### Skill_4: 如果输入的文本有多个单词，将原文分词，并逐一输出'中学水平及以上'单词的译文
 					### Skill_5: 若分词后的单词存在多个语义，则辨析适用场景
-					### Skill_6: 如果输入的文本不是'${from}'或'${to}'，输出“我只能在'${from}-${to}'之间翻译”
+					### Skill_6: 如果无法翻译，输出“我只能在'${from}-${to}'之间翻译”
 
 					## Constraint
 					### Constraint_1: 只能输出翻译结果，不要输出思考过程，不要输出其他无关的信息
@@ -90,7 +90,8 @@ async function translate(text, from, to, options) {
 				}
 			],
 			"stream": true,
-			"enable_thinking": false
+			"reasoning_effort": "high",
+			"thinking": {"type": "disabled"},
 		}
 
 		const response = await window.fetch(requestPath, {
